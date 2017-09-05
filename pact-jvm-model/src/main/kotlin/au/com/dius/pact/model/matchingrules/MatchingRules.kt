@@ -76,8 +76,15 @@ data class NumberTypeMatcher(val numberType: NumberType) : MatchingRule {
 /**
  * Regular Expression Matcher
  */
-data class RegexMatcher @JvmOverloads constructor (val regex: String, val example: String? = null) : MatchingRule {
+data class RegexMatcher(val regex: String) : MatchingRule {
   override fun toMap() = mapOf("match" to "regex", "regex" to regex)
+}
+
+/**
+ * Schema Matcher
+ */
+data class SchemaMatcher(val path: String) : MatchingRule {
+  override fun toMap() = mapOf("match" to "schema", "schema" to path)
 }
 
 /**
@@ -150,6 +157,7 @@ data class MatchingRuleGroup @JvmOverloads constructor(val rules: MutableList<Ma
     private const val MIN = "min"
     private const val MAX = "max"
     private const val REGEX = "regex"
+    private const val SCHEMA = "schema"
     private const val TIMESTAMP = "timestamp"
     private const val TIME = "time"
     private const val DATE = "date"
@@ -162,6 +170,7 @@ data class MatchingRuleGroup @JvmOverloads constructor(val rules: MutableList<Ma
     fun ruleFromMap(map: Map<String, Any?>): MatchingRule {
       if (map.containsKey(MATCH)) {
         return when (map[MATCH]) {
+          SCHEMA -> SchemaMatcher(map[SCHEMA] as String)
           REGEX -> RegexMatcher(map[REGEX] as String)
           "equality" -> EqualsMatcher
           "null" -> NullMatcher
@@ -201,7 +210,9 @@ data class MatchingRuleGroup @JvmOverloads constructor(val rules: MutableList<Ma
           }
         }
       } else if (map.containsKey(REGEX)) {
-        return RegexMatcher(map[REGEX] as String)
+          return RegexMatcher(map[REGEX] as String)
+      } else if (map.containsKey(SCHEMA)) {
+          return SchemaMatcher(map[SCHEMA] as String)
       } else if (map.containsKey(MIN)) {
         return MinTypeMatcher(mapEntryToInt(map, MIN))
       } else if (map.containsKey(MAX)) {

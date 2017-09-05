@@ -1,7 +1,7 @@
 package au.com.dius.pact.matchers
 
 import au.com.dius.pact.model._
-import au.com.dius.pact.model.matchingrules.{MatchingRules, RegexMatcher}
+import au.com.dius.pact.model.matchingrules.{MatchingRules, RegexMatcher, SchemaMatcher}
 import org.junit.runner.RunWith
 import org.specs2.mutable.Specification
 import org.specs2.runner.JUnitRunner
@@ -86,7 +86,7 @@ class XmlBodyMatcherTest extends Specification with AllExpectations {
     "returns a mismatch" should {
 
       def containMessage(s: String) = (a: List[BodyMismatch]) => (
-          a.exists((m: BodyMismatch) => m.mismatch.get == s),
+          a.exists((m: BodyMismatch) => m.mismatch.get.contains(s)),
           s"$a does not contain '$s'"
         )
 
@@ -95,6 +95,15 @@ class XmlBodyMatcherTest extends Specification with AllExpectations {
         s"$a does not have path '$p', paths are: ${a.map(m => m.path).mkString(",")}"
         )
 
+      "delegate to the schema matcher" in {
+        val schemaPath = "baz"
+        expectedBody = OptionalBody.missing()
+        actualBody = OptionalBody.body("<foo><one/><two/><three/></foo>")
+        matchers.addCategory("body").addRule("$.foo.2.three", new SchemaMatcher(schemaPath))
+        val mismatches = matcher.matchBody(expected(), actual(), allowUnexpectedKeys)
+        mismatches must not(beEmpty)
+        mismatches must containMessage("Failed to match a rule")
+      }
 
       "when comparing anything to an empty body" in {
         expectedBody = OptionalBody.body(<blah/>.toString())
@@ -202,15 +211,12 @@ class XmlBodyMatcherTest extends Specification with AllExpectations {
 
     "with a matcher defined" should {
 
-      "delegate to the matcher" in {
+      "delegate to the regex matcher" in {
         expectedBody = OptionalBody.body("<foo something=\"100\"/>")
         actualBody = OptionalBody.body("<foo something=\"101\"/>")
         matchers.addCategory("body").addRule("$.foo['@something']", new RegexMatcher("\\d+"))
         matcher.matchBody(expected(), actual(), allowUnexpectedKeys) must beEmpty
       }
-
     }
-
   }
-
 }

@@ -1,0 +1,10 @@
+<sch:schema xmlns:sch="http://purl.oclc.org/dsdl/schematron">
+    <sch:ns uri="http://www.w3.org/2005/Atom" prefix="atom" />
+    <sch:pattern name="Check structure">
+        <sch:rule context="atom:Person">
+            <sch:assert test="@Title">The element Person must have a Title attribute.</sch:assert>
+            <sch:assert test="Name">The element Person must have a Name element.</sch:assert>
+            <sch:assert test="Gender">The element Person must have a Gender element.</sch:assert>
+        </sch:rule>
+    </sch:pattern>
+</sch:schema>

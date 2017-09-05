@@ -1,5 +1,7 @@
 package au.com.dius.pact.matchers
 
+import au.com.dius.pact.matchers.util.SchematronResultType
+import au.com.dius.pact.matchers.util.SchematronValidatorUtil
 import au.com.dius.pact.model.matchingrules.DateMatcher
 import au.com.dius.pact.model.matchingrules.IncludeMatcher
 import au.com.dius.pact.model.matchingrules.MatchingRule
@@ -10,42 +12,47 @@ import au.com.dius.pact.model.matchingrules.NullMatcher
 import au.com.dius.pact.model.matchingrules.NumberTypeMatcher
 import au.com.dius.pact.model.matchingrules.RegexMatcher
 import au.com.dius.pact.model.matchingrules.RuleLogic
+import au.com.dius.pact.model.matchingrules.SchemaMatcher
 import au.com.dius.pact.model.matchingrules.TimeMatcher
 import au.com.dius.pact.model.matchingrules.TimestampMatcher
 import au.com.dius.pact.model.matchingrules.TypeMatcher
 import mu.KotlinLogging
 import org.apache.commons.lang3.time.DateUtils
 import scala.xml.Elem
+import java.io.File
 import java.math.BigDecimal
 import java.math.BigInteger
+import java.nio.file.Paths
 import java.text.ParseException
 
 private val logger = KotlinLogging.logger {}
 
 fun valueOf(value: Any?): String {
-  return when (value) {
-    null -> "null"
-    is String -> "'$value'"
-    else -> value.toString()
+  if (value == null) {
+    return "null"
+  } else if (value is String) {
+    return "'$value'"
+  } else {
+    return value.toString()
   }
 }
 
 fun safeToString(value: Any?): String {
-  return when (value) {
-    null -> ""
-    is Elem -> value.text()
-    else -> value.toString()
-  }
+    return when (value) {
+        null -> ""
+        is Elem -> value.text()
+        else -> value.toString()
+    }
 }
 
 fun <Mismatch> matchInclude(includedValue: String, path: List<String>, expected: Any?, actual: Any?,
                             mismatchFactory: MismatchFactory<Mismatch>): List<Mismatch> {
   val matches = safeToString(actual).contains(includedValue)
   logger.debug { "comparing if ${valueOf(actual)} includes '$includedValue' at $path -> $matches" }
-  return if (matches) {
-    listOf()
+  if (matches) {
+    return listOf()
   } else {
-    listOf(mismatchFactory.create(expected, actual,
+    return listOf(mismatchFactory.create(expected, actual,
       "Expected ${valueOf(actual)} to include ${valueOf(includedValue)}", path))
   }
 }
@@ -73,6 +80,7 @@ fun <Mismatch> domatch(matchers: MatchingRuleGroup, path: List<String>, expected
 fun <Mismatch> domatch(matcher: MatchingRule, path: List<String>, expected: Any?, actual: Any?,
                        mismatchFn: MismatchFactory<Mismatch>): List<Mismatch> {
   return when (matcher) {
+    is SchemaMatcher -> matchSchema(matcher.path, path, expected, actual, mismatchFn)
     is RegexMatcher -> matchRegex(matcher.regex, path, expected, actual, mismatchFn)
     is TypeMatcher -> matchType(path, expected, actual, mismatchFn)
     is NumberTypeMatcher -> matchNumber(matcher.numberType, path, expected, actual, mismatchFn)
@@ -96,6 +104,31 @@ fun <Mismatch> matchEquality(path: List<String>, expected: Any?, actual: Any?,
   } else {
     listOf(mismatchFactory.create(expected, actual, "Expected ${valueOf(actual)} to equal ${valueOf(actual)}", path))
   }
+}
+
+fun <Mismatch> matchSchema(filePath: String, path: List<String>, expected: Any?, actual: Any?,
+                           mismatchFactory: MismatchFactory<Mismatch>): List<Mismatch> {
+    val absoluteFilePath = Paths.get(File("").absolutePath, filePath).toAbsolutePath().toString()
+    val schemaFile = File(absoluteFilePath)
+    if (schemaFile.exists()) {
+        val schematronResult = SchematronValidatorUtil.isXmlStringValidAgainstSchema(
+                schemaFile.readText(), actual.toString())
+        logger.debug { "comparing XML against schematron file at $absoluteFilePath" }
+        return when (schematronResult.resultType) {
+            SchematronResultType.InvalidSchematronFile ->
+                listOf(mismatchFactory.create(expected, actual,
+                        "Schematron file $absoluteFilePath is invalid", path))
+            SchematronResultType.XmlDoesNotMatchSchema ->
+                schematronResult.failures.map { each -> mismatchFactory.create(expected, actual, each, path) }
+            SchematronResultType.XmlMatchesSchema -> {
+                logger.debug { "XML matched Schematron file $absoluteFilePath" }
+                emptyList()
+            }
+        }
+    } else {
+        return listOf(mismatchFactory.create(expected, actual,
+                "Schematron file $absoluteFilePath does not exist", path))
+    }
 }
 
 fun <Mismatch> matchRegex(regex: String, path: List<String>, expected: Any?, actual: Any?,
@@ -172,39 +205,39 @@ fun <Mismatch> matchNumber(numberType: NumberTypeMatcher.NumberType, path: List<
 fun <Mismatch> matchDate(pattern: String, path: List<String>, expected: Any?, actual: Any?,
                          mismatchFactory: MismatchFactory<Mismatch>): List<Mismatch> {
   logger.debug { "comparing ${valueOf(actual)} to date pattern $pattern at $path" }
-  return try {
+  try {
     DateUtils.parseDate(safeToString(actual), pattern)
-    emptyList()
+    return emptyList()
   } catch (e: ParseException) {
-    listOf(mismatchFactory.create(expected, actual,
+    return listOf(mismatchFactory.create(expected, actual,
       "Expected ${valueOf(actual)} to match a date of '$pattern': " +
-        "${e.message}", path))
+      "${e.message}", path))
   }
 }
 
 fun <Mismatch> matchTime(pattern: String, path: List<String>, expected: Any?, actual: Any?,
                          mismatchFactory: MismatchFactory<Mismatch>): List<Mismatch> {
   logger.debug { "comparing ${valueOf(actual)} to time pattern $pattern at $path" }
-  return try {
+  try {
     DateUtils.parseDate(safeToString(actual), pattern)
-    emptyList()
+    return emptyList()
   } catch (e: ParseException) {
-    listOf(mismatchFactory.create(expected, actual,
+    return listOf(mismatchFactory.create(expected, actual,
       "Expected ${valueOf(actual)} to match a time of '$pattern': " +
-        "${e.message}", path))
+      "${e.message}", path))
   }
 }
 
 fun <Mismatch> matchTimestamp(pattern: String, path: List<String>, expected: Any?, actual: Any?,
                               mismatchFactory: MismatchFactory<Mismatch>): List<Mismatch> {
   logger.debug { "comparing ${valueOf(actual)} to timestamp pattern $pattern at $path" }
-  return try {
+  try {
     DateUtils.parseDate(safeToString(actual), pattern)
-    emptyList()
+    return emptyList()
   } catch (e: ParseException) {
-    listOf(mismatchFactory.create(expected, actual,
+    return listOf(mismatchFactory.create(expected, actual,
       "Expected ${valueOf(actual)} to match a timestamp of '$pattern': " +
-        "${e.message}", path))
+      "${e.message}", path))
   }
 }
 

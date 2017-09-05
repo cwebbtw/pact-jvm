@@ -8,8 +8,12 @@ import scala.xml._
 
 class XmlBodyMatcher extends BodyMatcher with StrictLogging {
 
+
+
   override def matchBody(expected: HttpPart, actual: HttpPart, allowUnexpectedKeys: Boolean): List[BodyMismatch] = {
     (expected.getBody.getState, actual.getBody.getState) match {
+      case (OptionalBody.State.MISSING, _) if !expected.getMatchingRules.isEmpty =>
+        onlyMatchRules(parse(actual.getBody.orElse("")), expected.getMatchingRules)
       case (OptionalBody.State.MISSING, _) => List()
       case (OptionalBody.State.NULL, OptionalBody.State.PRESENT) => List(BodyMismatch(None, actual.getBody.getValue,
         Some(s"Expected empty body but received '${actual.getBody.getValue}'")))
@@ -22,7 +26,18 @@ class XmlBodyMatcher extends BodyMatcher with StrictLogging {
     }
   }
 
-  def parse(xmlData: String) = {
+  def onlyMatchRules(actualParsedBody: Node, matchingRules: MatchingRules): List[BodyMismatch] = {
+
+    val nodePath = Seq("$") :+ actualParsedBody.label
+    if (Matchers.matcherDefined("body", nodePath, matchingRules)) {
+      logger.debug("onlyMatchRules: Matcher defined for path " + nodePath)
+      return Matchers.domatch[BodyMismatch](matchingRules, "body", nodePath, None, actualParsedBody, BodyMismatchFactory)
+    }
+
+    List(BodyMismatch(None, actualParsedBody, Some("Failed to match a rule for path " + nodePath)))
+  }
+
+  def parse(xmlData: String): Node = {
     if (xmlData.isEmpty) Text("")
     else Utility.trim(XML.loadString(xmlData))
   }
@@ -53,14 +68,19 @@ class XmlBodyMatcher extends BodyMatcher with StrictLogging {
     }
   }
 
-  def compareNode(path: Seq[String], expected: Node, actual: Node, allowUnexpectedKeys: Boolean,
-                  matchers: MatchingRules): List[BodyMismatch] = {
+  def compareNode(path: Seq[String], expected: Node, actual: Node, allowUnexpectedKeys: Boolean, matchers: MatchingRules): List[BodyMismatch] = {
+
     val nodePath = path :+ expected.label
+
     val mismatches = if (Matchers.matcherDefined("body", nodePath, matchers)) {
-      logger.debug("compareNode: Matcher defined for path " + nodePath)
+
+      logger.debug("foo compareNode: Matcher defined for path " + nodePath)
       Matchers.domatch[BodyMismatch](matchers, "body", nodePath, expected, actual, BodyMismatchFactory)
+
     } else if (actual.label != expected.label) {
+
         List(BodyMismatch(expected, actual, Some(s"Expected element ${expected.label} but received ${actual.label}"), mkPathString(nodePath)))
+
     } else {
         List()
     }
